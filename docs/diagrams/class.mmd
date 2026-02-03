@@ -1,0 +1,208 @@
+classDiagram
+    class Task {
+        <<interface>>
+        +ID() string
+        +Execute(ctx context.Context) (interface{}, error)
+    }
+
+    class TaskFunc {
+        -id string
+        -fn func(ctx) (interface{}, error)
+        +ID() string
+        +Execute(ctx context.Context) (interface{}, error)
+    }
+
+    class Result {
+        +TaskID string
+        +Value interface{}
+        +Error error
+        +StartTime time.Time
+        +Duration time.Duration
+    }
+
+    class PoolConfig {
+        +Workers int
+        +QueueSize int
+        +TaskTimeout time.Duration
+        +ShutdownGrace time.Duration
+        +OnError func(string, error)
+        +OnComplete func(Result)
+    }
+
+    class PoolMetrics {
+        +ActiveWorkers int64
+        +QueuedTasks int64
+        +CompletedTasks int64
+        +FailedTasks int64
+        +TotalLatencyUs int64
+        +TaskCount int64
+        +AverageLatency() time.Duration
+    }
+
+    class WorkerPool {
+        -config *PoolConfig
+        -tasks chan Task
+        -results chan Result
+        -metrics *PoolMetrics
+        -ctx context.Context
+        -cancel context.CancelFunc
+        +Start()
+        +Submit(task Task) error
+        +SubmitWait(ctx, task) (Result, error)
+        +SubmitBatch(tasks []Task) chan Result
+        +SubmitBatchWait(ctx, tasks) ([]Result, error)
+        +Results() chan Result
+        +Metrics() *PoolMetrics
+        +QueueLength() int
+        +ActiveWorkers() int
+        +IsRunning() bool
+        +WaitForDrain(ctx) error
+        +Shutdown(timeout) error
+        +Stop()
+    }
+
+    Task <|.. TaskFunc : implements
+    WorkerPool --> PoolConfig : configured by
+    WorkerPool --> PoolMetrics : tracks
+    WorkerPool --> Task : executes
+    WorkerPool --> Result : produces
+
+    class RateLimiter {
+        <<interface>>
+        +Allow(ctx context.Context) bool
+        +Wait(ctx context.Context) error
+    }
+
+    class TokenBucketConfig {
+        +Rate float64
+        +Capacity int
+    }
+
+    class TokenBucket {
+        -rate float64
+        -capacity int
+        -tokens float64
+        -lastTime time.Time
+        +Allow(ctx context.Context) bool
+        +Wait(ctx context.Context) error
+    }
+
+    class SlidingWindowConfig {
+        +WindowSize time.Duration
+        +MaxRequests int
+    }
+
+    class SlidingWindow {
+        -windowSize time.Duration
+        -maxRequests int
+        -timestamps []time.Time
+        +Allow(ctx context.Context) bool
+        +Wait(ctx context.Context) error
+    }
+
+    RateLimiter <|.. TokenBucket : implements
+    RateLimiter <|.. SlidingWindow : implements
+    TokenBucket --> TokenBucketConfig : configured by
+    SlidingWindow --> SlidingWindowConfig : configured by
+
+    class Priority {
+        <<enumeration>>
+        Low = 0
+        Normal = 1
+        High = 2
+        Critical = 3
+        +String() string
+    }
+
+    class PriorityQueue~T~ {
+        -h *innerHeap~T~
+        -seq uint64
+        +Push(value T, priority Priority)
+        +Pop() (T, bool)
+        +Peek() (T, bool)
+        +Len() int
+        +IsEmpty() bool
+    }
+
+    PriorityQueue --> Priority : uses
+
+    class State {
+        <<enumeration>>
+        Closed = 0
+        Open = 1
+        HalfOpen = 2
+        +String() string
+    }
+
+    class BreakerConfig {
+        +MaxFailures int
+        +Timeout time.Duration
+        +HalfOpenRequests int
+    }
+
+    class CircuitBreaker {
+        -config *BreakerConfig
+        -state State
+        -failures int
+        -successes int
+        -halfOpenAllowed int
+        -lastFailure time.Time
+        +State() State
+        +Execute(fn func() error) error
+        +Reset()
+        +Failures() int
+    }
+
+    CircuitBreaker --> BreakerConfig : configured by
+    CircuitBreaker --> State : has
+
+    class Semaphore {
+        -maxWeight int64
+        -current int64
+        -waiters []waiter
+        +Acquire(ctx context.Context, weight int64) error
+        +TryAcquire(weight int64) bool
+        +Release(weight int64)
+        +Current() int64
+        +Available() int64
+    }
+
+    class SystemResources {
+        +CPUPercent float64
+        +CPUPerCore []float64
+        +NumCPU int
+        +MemoryTotal uint64
+        +MemoryUsed uint64
+        +MemoryAvailable uint64
+        +MemoryPercent float64
+        +DiskTotal uint64
+        +DiskUsed uint64
+        +DiskFree uint64
+        +DiskPercent float64
+        +Load1 float64
+        +Load5 float64
+        +Load15 float64
+        +NumGoroutines int
+        +HeapAlloc uint64
+        +HeapSys uint64
+        +CollectedAt time.Time
+    }
+
+    class MonitorConfig {
+        +DiskPath string
+        +CPUSampleTime time.Duration
+        +CollectInterval time.Duration
+    }
+
+    class ResourceMonitor {
+        -config *MonitorConfig
+        -latest *SystemResources
+        -cancel context.CancelFunc
+        +GetSystemResources(ctx) (*SystemResources, error)
+        +Start(ctx context.Context) error
+        +Stop()
+        +Latest() *SystemResources
+    }
+
+    ResourceMonitor --> MonitorConfig : configured by
+    ResourceMonitor --> SystemResources : produces

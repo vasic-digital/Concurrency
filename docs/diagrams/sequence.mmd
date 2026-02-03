@@ -1,0 +1,83 @@
+sequenceDiagram
+    participant Caller
+    participant WorkerPool
+    participant TaskChannel as Task Channel (buffered)
+    participant Worker as Worker Goroutine
+    participant Semaphore as Semaphore Channel
+    participant Task
+    participant ResultChannel as Result Channel
+
+    Note over Caller,ResultChannel: Worker Pool Task Execution Flow
+
+    Caller->>WorkerPool: NewWorkerPool(config)
+    WorkerPool->>TaskChannel: make(chan Task, QueueSize)
+    WorkerPool->>ResultChannel: make(chan Result, QueueSize)
+    WorkerPool->>Semaphore: make(chan struct{}, Workers)
+
+    Caller->>WorkerPool: Submit(task)
+
+    alt Pool not started
+        WorkerPool->>WorkerPool: startLocked()
+        loop For each worker (0..Workers-1)
+            WorkerPool->>Worker: go worker(id)
+        end
+    end
+
+    WorkerPool->>WorkerPool: atomic.AddInt64(QueuedTasks, 1)
+    WorkerPool->>TaskChannel: tasks <- task
+    WorkerPool-->>Caller: nil (success)
+
+    Note over Worker: Worker loop: select on ctx.Done() or tasks channel
+
+    TaskChannel->>Worker: task := <-tasks
+
+    Worker->>Semaphore: sem <- struct{}{}
+    Note over Worker: ActiveWorkers++
+
+    Worker->>Worker: executeTask(task)
+
+    alt TaskTimeout > 0
+        Worker->>Worker: ctx = context.WithTimeout(ctx, TaskTimeout)
+    end
+
+    Worker->>Task: Execute(ctx)
+    Task-->>Worker: (value, error)
+
+    Worker->>Worker: Record duration, update metrics
+
+    alt Error != nil
+        Worker->>Worker: atomic.AddInt64(FailedTasks, 1)
+    else Success
+        Worker->>Worker: atomic.AddInt64(CompletedTasks, 1)
+    end
+
+    Worker->>Semaphore: <-sem
+    Note over Worker: ActiveWorkers--
+
+    Worker->>ResultChannel: results <- Result{TaskID, Value, Error, StartTime, Duration}
+
+    alt OnError callback set AND Error != nil
+        Worker->>Caller: config.OnError(taskID, err)
+    end
+
+    alt OnComplete callback set
+        Worker->>Caller: config.OnComplete(result)
+    end
+
+    Caller->>ResultChannel: result := <-wp.Results()
+
+    Note over Caller,ResultChannel: Shutdown Flow
+
+    Caller->>WorkerPool: Shutdown(timeout)
+    WorkerPool->>TaskChannel: close(tasks)
+    Note over Worker: Worker sees channel closed, returns
+
+    alt Workers finish within timeout
+        Worker-->>WorkerPool: wg.Done()
+    else Timeout exceeded
+        WorkerPool->>WorkerPool: cancel() context
+        Worker-->>WorkerPool: wg.Done()
+    end
+
+    WorkerPool->>ResultChannel: close(results)
+    WorkerPool-->>Caller: nil

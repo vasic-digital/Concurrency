@@ -1,0 +1,60 @@
+graph TB
+    subgraph "digital.vasic.concurrency"
+        subgraph "Task Execution"
+            pool["pkg/pool<br/>Worker Pool<br/>---<br/>Task, TaskFunc, WorkerPool<br/>ParallelExecute, Map"]
+            queue["pkg/queue<br/>Priority Queue<br/>---<br/>PriorityQueue[T]<br/>Low, Normal, High, Critical"]
+        end
+
+        subgraph "Flow Control"
+            limiter["pkg/limiter<br/>Rate Limiting<br/>---<br/>RateLimiter interface<br/>TokenBucket, SlidingWindow"]
+            breaker["pkg/breaker<br/>Circuit Breaker<br/>---<br/>CircuitBreaker<br/>Closed, Open, HalfOpen"]
+            semaphore["pkg/semaphore<br/>Semaphore<br/>---<br/>Weighted Semaphore<br/>Acquire, TryAcquire, Release"]
+        end
+
+        subgraph "Observability"
+            monitor["pkg/monitor<br/>Resource Monitor<br/>---<br/>SystemResources<br/>CPU, Memory, Disk, Load"]
+        end
+    end
+
+    subgraph "Standard Library"
+        stdlib_sync["sync<br/>Mutex, RWMutex, WaitGroup"]
+        stdlib_atomic["sync/atomic<br/>Lock-free counters"]
+        stdlib_context["context<br/>Cancellation, Timeout"]
+        stdlib_heap["container/heap<br/>Heap interface"]
+        stdlib_time["time<br/>Timers, Tickers"]
+    end
+
+    subgraph "External"
+        gopsutil["gopsutil/v3<br/>cpu, mem, disk, load"]
+    end
+
+    pool --> stdlib_sync
+    pool --> stdlib_atomic
+    pool --> stdlib_context
+    pool --> stdlib_time
+
+    queue --> stdlib_sync
+    queue --> stdlib_atomic
+    queue --> stdlib_heap
+
+    limiter --> stdlib_sync
+    limiter --> stdlib_context
+    limiter --> stdlib_time
+
+    breaker --> stdlib_sync
+    breaker --> stdlib_time
+
+    semaphore --> stdlib_sync
+    semaphore --> stdlib_context
+
+    monitor --> gopsutil
+    monitor --> stdlib_sync
+    monitor --> stdlib_context
+    monitor --> stdlib_time
+
+    style pool fill:#4a9eff,color:#fff
+    style queue fill:#4a9eff,color:#fff
+    style limiter fill:#ff9f43,color:#fff
+    style breaker fill:#ff9f43,color:#fff
+    style semaphore fill:#ff9f43,color:#fff
+    style monitor fill:#2ed573,color:#fff
