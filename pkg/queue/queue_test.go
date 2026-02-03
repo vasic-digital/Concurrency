@@ -203,3 +203,59 @@ func TestPriorityQueue_GenericTypes(t *testing.T) {
 	assert.Equal(t, "build", val.Name)
 	assert.Equal(t, 1, val.ID)
 }
+
+func TestPriorityQueue_New_NegativeCapacity(t *testing.T) {
+	// Test the path where initialCap < 0 (line 93-94)
+	pq := New[string](-10) // Negative capacity should be treated as 0
+	require.NotNil(t, pq)
+	assert.True(t, pq.IsEmpty())
+
+	// Queue should still work normally
+	pq.Push("test", Normal)
+	val, ok := pq.Pop()
+	require.True(t, ok)
+	assert.Equal(t, "test", val)
+}
+
+func TestPriorityQueue_New_VariousCapacities(t *testing.T) {
+	tests := []struct {
+		name        string
+		initialCap  int
+		expectedCap int // 0 means we just verify it works
+	}{
+		{
+			name:       "negative capacity",
+			initialCap: -100,
+		},
+		{
+			name:       "zero capacity",
+			initialCap: 0,
+		},
+		{
+			name:       "positive capacity",
+			initialCap: 100,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pq := New[int](tt.initialCap)
+			require.NotNil(t, pq)
+
+			// Verify queue functions correctly regardless of initial capacity
+			for i := 0; i < 10; i++ {
+				pq.Push(i, Priority(i%4))
+			}
+
+			assert.Equal(t, 10, pq.Len())
+
+			// Pop all items
+			for i := 0; i < 10; i++ {
+				_, ok := pq.Pop()
+				require.True(t, ok)
+			}
+
+			assert.True(t, pq.IsEmpty())
+		})
+	}
+}

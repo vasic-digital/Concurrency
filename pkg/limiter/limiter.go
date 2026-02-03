@@ -32,6 +32,11 @@ type TokenBucket struct {
 	tokens   float64
 	lastTime time.Time
 	mu       sync.Mutex
+
+	// testHook is called in Wait() after Allow() returns false
+	// but before calculating the deficit. It can be used to modify
+	// the token count for testing edge cases. Only for testing.
+	testHook func(tb *TokenBucket)
 }
 
 // NewTokenBucket creates a new token bucket rate limiter.
@@ -79,6 +84,12 @@ func (tb *TokenBucket) Wait(ctx context.Context) error {
 	for {
 		if tb.Allow(ctx) {
 			return nil
+		}
+
+		// Test hook: allows tests to modify state between Allow and
+		// deficit calculation to cover edge cases.
+		if tb.testHook != nil {
+			tb.testHook(tb)
 		}
 
 		// Calculate wait time for next token

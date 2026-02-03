@@ -1,0 +1,707 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>pool: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">digital.vasic.concurrency/pkg/pool/pool.go (96.4%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package pool
+
+import (
+        "context"
+        "fmt"
+        "runtime"
+        "sync"
+        "sync/atomic"
+        "time"
+)
+
+// Task represents a unit of work to be executed by the worker pool
+type Task interface {
+        // ID returns a unique identifier for the task
+        ID() string
+        // Execute runs the task and returns the result
+        Execute(ctx context.Context) (interface{}, error)
+}
+
+// TaskFunc wraps a function as a Task
+type TaskFunc struct {
+        id string
+        fn func(ctx context.Context) (interface{}, error)
+}
+
+// NewTaskFunc creates a new TaskFunc with the given ID and function
+func NewTaskFunc(
+        id string,
+        fn func(ctx context.Context) (interface{}, error),
+) *TaskFunc <span class="cov8" title="1">{
+        return &amp;TaskFunc{id: id, fn: fn}
+}</span>
+
+func (t *TaskFunc) ID() string <span class="cov8" title="1">{ return t.id }</span>
+func (t *TaskFunc) Execute(
+        ctx context.Context,
+) (interface{}, error) <span class="cov8" title="1">{
+        return t.fn(ctx)
+}</span>
+
+// Result represents the outcome of a task execution
+type Result struct {
+        TaskID    string
+        Value     interface{}
+        Error     error
+        StartTime time.Time
+        Duration  time.Duration
+}
+
+// PoolConfig holds configuration for the worker pool
+type PoolConfig struct {
+        Workers       int                            // Number of concurrent workers
+        QueueSize     int                            // Size of the task queue
+        TaskTimeout   time.Duration                  // Maximum time for a single task
+        ShutdownGrace time.Duration                  // Grace period during shutdown
+        OnError       func(taskID string, err error) // Error callback
+        OnComplete    func(result Result)            // Completion callback
+}
+
+// DefaultPoolConfig returns a default configuration
+func DefaultPoolConfig() *PoolConfig <span class="cov8" title="1">{
+        return &amp;PoolConfig{
+                Workers:       runtime.NumCPU(),
+                QueueSize:     1000,
+                TaskTimeout:   30 * time.Second,
+                ShutdownGrace: 5 * time.Second,
+        }
+}</span>
+
+// PoolMetrics tracks worker pool statistics
+type PoolMetrics struct {
+        ActiveWorkers  int64
+        QueuedTasks    int64
+        CompletedTasks int64
+        FailedTasks    int64
+        PanickedTasks  int64 // Tasks that panicked during execution
+        TotalLatencyUs int64 // Total latency in microseconds
+        TaskCount      int64 // For calculating average
+}
+
+// AverageLatency returns the average task latency
+func (m *PoolMetrics) AverageLatency() time.Duration <span class="cov8" title="1">{
+        count := atomic.LoadInt64(&amp;m.TaskCount)
+        if count == 0 </span><span class="cov8" title="1">{
+                return 0
+        }</span>
+        <span class="cov8" title="1">totalUs := atomic.LoadInt64(&amp;m.TotalLatencyUs)
+        return time.Duration(totalUs/count) * time.Microsecond</span>
+}
+
+// WorkerPool provides bounded concurrency with configurable workers
+type WorkerPool struct {
+        config       *PoolConfig
+        tasks        chan Task
+        results      chan Result
+        sem          chan struct{}
+        metrics      *PoolMetrics
+        ctx          context.Context
+        cancel       context.CancelFunc
+        wg           sync.WaitGroup
+        started      bool
+        closed       bool
+        mu           sync.Mutex
+        workerCount  int32         // Current number of workers
+        stopWorkers  chan struct{} // Signal to stop excess workers during resize down
+        resizeMu     sync.Mutex    // Mutex for resize operations
+}
+
+// NewWorkerPool creates a new worker pool with the given configuration
+func NewWorkerPool(config *PoolConfig) *WorkerPool <span class="cov8" title="1">{
+        if config == nil </span><span class="cov8" title="1">{
+                config = DefaultPoolConfig()
+        }</span>
+
+        <span class="cov8" title="1">ctx, cancel := context.WithCancel(context.Background())
+
+        pool := &amp;WorkerPool{
+                config:      config,
+                tasks:       make(chan Task, config.QueueSize),
+                results:     make(chan Result, config.QueueSize),
+                sem:         make(chan struct{}, config.Workers),
+                metrics:     &amp;PoolMetrics{},
+                ctx:         ctx,
+                cancel:      cancel,
+                stopWorkers: make(chan struct{}),
+        }
+
+        return pool</span>
+}
+
+// Start begins the worker pool processing
+func (p *WorkerPool) Start() <span class="cov8" title="1">{
+        p.mu.Lock()
+        defer p.mu.Unlock()
+        p.startLocked()
+}</span>
+
+// startLocked starts the pool assuming the lock is already held
+func (p *WorkerPool) startLocked() <span class="cov8" title="1">{
+        if p.started || p.closed </span><span class="cov8" title="1">{
+                return
+        }</span>
+
+        <span class="cov8" title="1">p.started = true
+
+        // Start workers
+        for i := 0; i &lt; p.config.Workers; i++ </span><span class="cov8" title="1">{
+                p.wg.Add(1)
+                atomic.AddInt32(&amp;p.workerCount, 1)
+                go p.worker(i)
+        }</span>
+}
+
+// worker processes tasks from the queue
+func (p *WorkerPool) worker(id int) <span class="cov8" title="1">{
+        defer func() </span><span class="cov8" title="1">{
+                atomic.AddInt32(&amp;p.workerCount, -1)
+                p.wg.Done()
+        }</span>()
+
+        <span class="cov8" title="1">for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-p.ctx.Done():<span class="cov8" title="1">
+                        return</span>
+                case &lt;-p.stopWorkers:<span class="cov8" title="1">
+                        // Worker told to stop during resize down
+                        return</span>
+                case task, ok := &lt;-p.tasks:<span class="cov8" title="1">
+                        if !ok </span><span class="cov8" title="1">{
+                                return
+                        }</span>
+
+                        // Acquire semaphore
+                        <span class="cov8" title="1">select </span>{
+                        case p.sem &lt;- struct{}{}:<span class="cov8" title="1">
+                                atomic.AddInt64(&amp;p.metrics.ActiveWorkers, 1)</span>
+                        case &lt;-p.ctx.Done():<span class="cov8" title="1">
+                                return</span>
+                        case &lt;-p.stopWorkers:<span class="cov0" title="0">
+                                // Put task back before stopping
+                                select </span>{
+                                case p.tasks &lt;- task:<span class="cov0" title="0"></span>
+                                default:<span class="cov0" title="0"></span>
+                                }
+                                <span class="cov0" title="0">return</span>
+                        }
+
+                        // Execute the task
+                        <span class="cov8" title="1">result := p.executeTask(task)
+
+                        // Release semaphore
+                        &lt;-p.sem
+                        atomic.AddInt64(&amp;p.metrics.ActiveWorkers, -1)
+
+                        // Send result (non-blocking if channel is full)
+                        select </span>{
+                        case p.results &lt;- result:<span class="cov8" title="1"></span>
+                        default:<span class="cov8" title="1"></span>
+                                // Result channel full, drop or log
+                        }
+
+                        // Call callbacks
+                        <span class="cov8" title="1">if result.Error != nil &amp;&amp; p.config.OnError != nil </span><span class="cov8" title="1">{
+                                p.config.OnError(result.TaskID, result.Error)
+                        }</span>
+                        <span class="cov8" title="1">if p.config.OnComplete != nil </span><span class="cov8" title="1">{
+                                p.config.OnComplete(result)
+                        }</span>
+                }
+        }
+}
+
+// executeTask runs a single task with timeout and panic recovery
+func (p *WorkerPool) executeTask(task Task) Result <span class="cov8" title="1">{
+        startTime := time.Now()
+
+        // Create context with timeout
+        ctx := p.ctx
+        if p.config.TaskTimeout &gt; 0 </span><span class="cov8" title="1">{
+                var cancel context.CancelFunc
+                ctx, cancel = context.WithTimeout(p.ctx, p.config.TaskTimeout)
+                defer cancel()
+        }</span>
+
+        // Execute the task with panic recovery
+        <span class="cov8" title="1">var value interface{}
+        var err error
+
+        func() </span><span class="cov8" title="1">{
+                defer func() </span><span class="cov8" title="1">{
+                        if r := recover(); r != nil </span><span class="cov8" title="1">{
+                                err = fmt.Errorf("task panicked: %v", r)
+                                atomic.AddInt64(&amp;p.metrics.PanickedTasks, 1)
+                        }</span>
+                }()
+                <span class="cov8" title="1">value, err = task.Execute(ctx)</span>
+        }()
+
+        <span class="cov8" title="1">duration := time.Since(startTime)
+
+        // Update metrics
+        atomic.AddInt64(
+                &amp;p.metrics.TotalLatencyUs,
+                int64(duration.Microseconds()),
+        )
+        atomic.AddInt64(&amp;p.metrics.TaskCount, 1)
+        if err != nil </span><span class="cov8" title="1">{
+                atomic.AddInt64(&amp;p.metrics.FailedTasks, 1)
+        }</span> else<span class="cov8" title="1"> {
+                atomic.AddInt64(&amp;p.metrics.CompletedTasks, 1)
+        }</span>
+
+        <span class="cov8" title="1">return Result{
+                TaskID:    task.ID(),
+                Value:     value,
+                Error:     err,
+                StartTime: startTime,
+                Duration:  duration,
+        }</span>
+}
+
+// Submit adds a task to the pool
+// Returns an error if the pool is closed or the queue is full
+func (p *WorkerPool) Submit(task Task) error <span class="cov8" title="1">{
+        p.mu.Lock()
+        if p.closed </span><span class="cov8" title="1">{
+                p.mu.Unlock()
+                return fmt.Errorf("pool is closed")
+        }</span>
+        <span class="cov8" title="1">if !p.started </span><span class="cov8" title="1">{
+                p.startLocked()
+        }</span>
+        <span class="cov8" title="1">p.mu.Unlock()
+
+        atomic.AddInt64(&amp;p.metrics.QueuedTasks, 1)
+
+        select </span>{
+        case p.tasks &lt;- task:<span class="cov8" title="1">
+                return nil</span>
+        case &lt;-p.ctx.Done():<span class="cov0" title="0">
+                atomic.AddInt64(&amp;p.metrics.QueuedTasks, -1)
+                return fmt.Errorf("pool context cancelled")</span>
+        default:<span class="cov8" title="1">
+                atomic.AddInt64(&amp;p.metrics.QueuedTasks, -1)
+                return fmt.Errorf("task queue is full")</span>
+        }
+}
+
+// SubmitWait submits a task and waits for its result
+func (p *WorkerPool) SubmitWait(
+        ctx context.Context,
+        task Task,
+) (Result, error) <span class="cov8" title="1">{
+        if err := p.Submit(task); err != nil </span><span class="cov0" title="0">{
+                return Result{}, err
+        }</span>
+
+        // Wait for the specific result
+        <span class="cov8" title="1">for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return Result{}, ctx.Err()</span>
+                case result := &lt;-p.results:<span class="cov8" title="1">
+                        if result.TaskID == task.ID() </span><span class="cov8" title="1">{
+                                return result, result.Error
+                        }</span>
+                        // Put back non-matching results
+                        <span class="cov8" title="1">select </span>{
+                        case p.results &lt;- result:<span class="cov8" title="1"></span>
+                        default:<span class="cov0" title="0"></span>
+                        }
+                }
+        }
+}
+
+// SubmitBatch submits multiple tasks and returns a channel of results
+func (p *WorkerPool) SubmitBatch(tasks []Task) &lt;-chan Result <span class="cov8" title="1">{
+        resultChan := make(chan Result, len(tasks))
+
+        go func() </span><span class="cov8" title="1">{
+                defer close(resultChan)
+
+                var submitted int
+                taskIDs := make(map[string]bool)
+
+                // Submit all tasks
+                for _, task := range tasks </span><span class="cov8" title="1">{
+                        if err := p.Submit(task); err == nil </span><span class="cov8" title="1">{
+                                taskIDs[task.ID()] = true
+                                submitted++
+                        }</span>
+                }
+
+                <span class="cov8" title="1">if submitted == 0 </span><span class="cov8" title="1">{
+                        return
+                }</span>
+
+                // Collect results
+                <span class="cov8" title="1">collected := 0
+                for collected &lt; submitted </span><span class="cov8" title="1">{
+                        select </span>{
+                        case &lt;-p.ctx.Done():<span class="cov8" title="1">
+                                return</span>
+                        case result := &lt;-p.results:<span class="cov8" title="1">
+                                if taskIDs[result.TaskID] </span><span class="cov8" title="1">{
+                                        resultChan &lt;- result
+                                        collected++
+                                }</span> else<span class="cov0" title="0"> {
+                                        // Put back non-matching results
+                                        select </span>{
+                                        case p.results &lt;- result:<span class="cov0" title="0"></span>
+                                        default:<span class="cov0" title="0"></span>
+                                        }
+                                }
+                        }
+                }
+        }()
+
+        <span class="cov8" title="1">return resultChan</span>
+}
+
+// SubmitBatchWait submits multiple tasks and waits for all results
+func (p *WorkerPool) SubmitBatchWait(
+        ctx context.Context,
+        tasks []Task,
+) ([]Result, error) <span class="cov8" title="1">{
+        resultChan := p.SubmitBatch(tasks)
+        results := make([]Result, 0, len(tasks))
+
+        for result := range resultChan </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return results, ctx.Err()</span>
+                default:<span class="cov8" title="1">
+                        results = append(results, result)</span>
+                }
+        }
+
+        <span class="cov8" title="1">return results, nil</span>
+}
+
+// Results returns the results channel
+func (p *WorkerPool) Results() &lt;-chan Result <span class="cov8" title="1">{
+        return p.results
+}</span>
+
+// Metrics returns a snapshot of pool metrics
+func (p *WorkerPool) Metrics() *PoolMetrics <span class="cov8" title="1">{
+        return &amp;PoolMetrics{
+                ActiveWorkers: atomic.LoadInt64(
+                        &amp;p.metrics.ActiveWorkers,
+                ),
+                QueuedTasks: atomic.LoadInt64(
+                        &amp;p.metrics.QueuedTasks,
+                ),
+                CompletedTasks: atomic.LoadInt64(
+                        &amp;p.metrics.CompletedTasks,
+                ),
+                FailedTasks: atomic.LoadInt64(
+                        &amp;p.metrics.FailedTasks,
+                ),
+                PanickedTasks: atomic.LoadInt64(
+                        &amp;p.metrics.PanickedTasks,
+                ),
+                TotalLatencyUs: atomic.LoadInt64(
+                        &amp;p.metrics.TotalLatencyUs,
+                ),
+                TaskCount: atomic.LoadInt64(
+                        &amp;p.metrics.TaskCount,
+                ),
+        }
+}</span>
+
+// QueueLength returns the current number of tasks in the queue
+func (p *WorkerPool) QueueLength() int <span class="cov8" title="1">{
+        return len(p.tasks)
+}</span>
+
+// ActiveWorkers returns the number of currently active workers
+func (p *WorkerPool) ActiveWorkers() int <span class="cov8" title="1">{
+        return int(atomic.LoadInt64(&amp;p.metrics.ActiveWorkers))
+}</span>
+
+// WorkerCount returns the current number of workers in the pool
+func (p *WorkerPool) WorkerCount() int <span class="cov8" title="1">{
+        return int(atomic.LoadInt32(&amp;p.workerCount))
+}</span>
+
+// Resize dynamically adjusts the number of workers in the pool
+// Returns error if pool is not running or newSize is invalid
+func (p *WorkerPool) Resize(newSize int) error <span class="cov8" title="1">{
+        if newSize &lt;= 0 </span><span class="cov8" title="1">{
+                return fmt.Errorf("worker count must be positive, got %d", newSize)
+        }</span>
+
+        <span class="cov8" title="1">p.mu.Lock()
+        if !p.started || p.closed </span><span class="cov8" title="1">{
+                p.mu.Unlock()
+                return fmt.Errorf("pool is not running")
+        }</span>
+        <span class="cov8" title="1">p.mu.Unlock()
+
+        p.resizeMu.Lock()
+        defer p.resizeMu.Unlock()
+
+        currentCount := int(atomic.LoadInt32(&amp;p.workerCount))
+
+        if newSize &gt; currentCount </span><span class="cov8" title="1">{
+                // Scale up: add more workers
+                for i := currentCount; i &lt; newSize; i++ </span><span class="cov8" title="1">{
+                        p.wg.Add(1)
+                        atomic.AddInt32(&amp;p.workerCount, 1)
+                        go p.worker(i)
+                }</span>
+        } else<span class="cov8" title="1"> if newSize &lt; currentCount </span><span class="cov8" title="1">{
+                // Scale down: signal workers to stop
+                toRemove := currentCount - newSize
+                for i := 0; i &lt; toRemove; i++ </span><span class="cov8" title="1">{
+                        select </span>{
+                        case p.stopWorkers &lt;- struct{}{}:<span class="cov8" title="1"></span>
+                                // Successfully signaled one worker to stop
+                        case &lt;-p.ctx.Done():<span class="cov0" title="0">
+                                return fmt.Errorf("pool context cancelled during resize")</span>
+                        }
+                }
+        }
+
+        // Update config to reflect new size
+        <span class="cov8" title="1">p.config.Workers = newSize
+
+        return nil</span>
+}
+
+// IsRunning returns whether the pool is running
+func (p *WorkerPool) IsRunning() bool <span class="cov8" title="1">{
+        p.mu.Lock()
+        defer p.mu.Unlock()
+        return p.started &amp;&amp; !p.closed
+}</span>
+
+// Shutdown gracefully shuts down the worker pool
+func (p *WorkerPool) Shutdown(timeout time.Duration) error <span class="cov8" title="1">{
+        p.mu.Lock()
+        if p.closed </span><span class="cov8" title="1">{
+                p.mu.Unlock()
+                return nil
+        }</span>
+        <span class="cov8" title="1">p.closed = true
+        p.mu.Unlock()
+
+        // Close the task queue to signal workers to stop
+        close(p.tasks)
+
+        // Create a done channel for the waitgroup
+        done := make(chan struct{})
+        go func() </span><span class="cov8" title="1">{
+                p.wg.Wait()
+                close(done)
+        }</span>()
+
+        // Wait for workers with timeout
+        <span class="cov8" title="1">if timeout &lt;= 0 </span><span class="cov8" title="1">{
+                timeout = p.config.ShutdownGrace
+        }</span>
+
+        <span class="cov8" title="1">select </span>{
+        case &lt;-done:<span class="cov8" title="1"></span>
+                // All workers finished
+        case &lt;-time.After(timeout):<span class="cov8" title="1">
+                // Timeout, cancel remaining work
+                p.cancel()
+                &lt;-done</span>
+        }
+
+        // Close results channel
+        <span class="cov8" title="1">close(p.results)
+
+        return nil</span>
+}
+
+// Stop immediately stops the worker pool
+func (p *WorkerPool) Stop() <span class="cov8" title="1">{
+        p.cancel()
+        _ = p.Shutdown(0)
+}</span>
+
+// WaitForDrain waits until all queued tasks are processed
+func (p *WorkerPool) WaitForDrain(ctx context.Context) error <span class="cov8" title="1">{
+        ticker := time.NewTicker(100 * time.Millisecond)
+        defer ticker.Stop()
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov8" title="1">
+                        return ctx.Err()</span>
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        if len(p.tasks) == 0 &amp;&amp; p.ActiveWorkers() == 0 </span><span class="cov8" title="1">{
+                                return nil
+                        }</span>
+                }
+        }
+}
+
+// ParallelExecute executes multiple functions in parallel and
+// returns results. This is a convenience function for simple
+// parallel execution.
+func ParallelExecute(
+        ctx context.Context,
+        fns []func(ctx context.Context) (interface{}, error),
+) ([]Result, error) <span class="cov8" title="1">{
+        pool := NewWorkerPool(&amp;PoolConfig{
+                Workers:   len(fns),
+                QueueSize: len(fns),
+        })
+        defer pool.Stop()
+
+        tasks := make([]Task, len(fns))
+        for i, fn := range fns </span><span class="cov8" title="1">{
+                tasks[i] = NewTaskFunc(fmt.Sprintf("task-%d", i), fn)
+        }</span>
+
+        <span class="cov8" title="1">return pool.SubmitBatchWait(ctx, tasks)</span>
+}
+
+// Map applies a function to each element in parallel and returns
+// results
+func Map[T any, R any](
+        ctx context.Context,
+        items []T,
+        workers int,
+        fn func(ctx context.Context, item T) (R, error),
+) ([]R, error) <span class="cov8" title="1">{
+        p := NewWorkerPool(&amp;PoolConfig{
+                Workers:   workers,
+                QueueSize: len(items),
+        })
+        defer p.Stop()
+
+        tasks := make([]Task, len(items))
+        for i, item := range items </span><span class="cov8" title="1">{
+                item := item // Capture loop variable
+                tasks[i] = NewTaskFunc(
+                        fmt.Sprintf("map-%d", i),
+                        func(ctx context.Context) (interface{}, error) </span><span class="cov8" title="1">{
+                                return fn(ctx, item)
+                        }</span>,
+                )
+        }
+
+        <span class="cov8" title="1">results, err := p.SubmitBatchWait(ctx, tasks)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+
+        <span class="cov8" title="1">output := make([]R, len(results))
+        for i, result := range results </span><span class="cov8" title="1">{
+                if result.Error != nil </span><span class="cov8" title="1">{
+                        return nil, result.Error
+                }</span>
+                <span class="cov8" title="1">output[i] = result.Value.(R)</span>
+        }
+
+        <span class="cov8" title="1">return output, nil</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

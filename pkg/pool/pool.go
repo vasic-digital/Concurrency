@@ -73,6 +73,7 @@ type PoolMetrics struct {
 	QueuedTasks    int64
 	CompletedTasks int64
 	FailedTasks    int64
+	PanickedTasks  int64 // Tasks that panicked during execution
 	TotalLatencyUs int64 // Total latency in microseconds
 	TaskCount      int64 // For calculating average
 }
@@ -89,17 +90,20 @@ func (m *PoolMetrics) AverageLatency() time.Duration {
 
 // WorkerPool provides bounded concurrency with configurable workers
 type WorkerPool struct {
-	config  *PoolConfig
-	tasks   chan Task
-	results chan Result
-	sem     chan struct{}
-	metrics *PoolMetrics
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	started bool
-	closed  bool
-	mu      sync.Mutex
+	config       *PoolConfig
+	tasks        chan Task
+	results      chan Result
+	sem          chan struct{}
+	metrics      *PoolMetrics
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	started      bool
+	closed       bool
+	mu           sync.Mutex
+	workerCount  int32         // Current number of workers
+	stopWorkers  chan struct{} // Signal to stop excess workers during resize down
+	resizeMu     sync.Mutex    // Mutex for resize operations
 }
 
 // NewWorkerPool creates a new worker pool with the given configuration
@@ -111,13 +115,14 @@ func NewWorkerPool(config *PoolConfig) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pool := &WorkerPool{
-		config:  config,
-		tasks:   make(chan Task, config.QueueSize),
-		results: make(chan Result, config.QueueSize),
-		sem:     make(chan struct{}, config.Workers),
-		metrics: &PoolMetrics{},
-		ctx:     ctx,
-		cancel:  cancel,
+		config:      config,
+		tasks:       make(chan Task, config.QueueSize),
+		results:     make(chan Result, config.QueueSize),
+		sem:         make(chan struct{}, config.Workers),
+		metrics:     &PoolMetrics{},
+		ctx:         ctx,
+		cancel:      cancel,
+		stopWorkers: make(chan struct{}),
 	}
 
 	return pool
@@ -141,17 +146,24 @@ func (p *WorkerPool) startLocked() {
 	// Start workers
 	for i := 0; i < p.config.Workers; i++ {
 		p.wg.Add(1)
+		atomic.AddInt32(&p.workerCount, 1)
 		go p.worker(i)
 	}
 }
 
 // worker processes tasks from the queue
 func (p *WorkerPool) worker(id int) {
-	defer p.wg.Done()
+	defer func() {
+		atomic.AddInt32(&p.workerCount, -1)
+		p.wg.Done()
+	}()
 
 	for {
 		select {
 		case <-p.ctx.Done():
+			return
+		case <-p.stopWorkers:
+			// Worker told to stop during resize down
 			return
 		case task, ok := <-p.tasks:
 			if !ok {
@@ -163,6 +175,13 @@ func (p *WorkerPool) worker(id int) {
 			case p.sem <- struct{}{}:
 				atomic.AddInt64(&p.metrics.ActiveWorkers, 1)
 			case <-p.ctx.Done():
+				return
+			case <-p.stopWorkers:
+				// Put task back before stopping
+				select {
+				case p.tasks <- task:
+				default:
+				}
 				return
 			}
 
@@ -191,7 +210,7 @@ func (p *WorkerPool) worker(id int) {
 	}
 }
 
-// executeTask runs a single task with timeout
+// executeTask runs a single task with timeout and panic recovery
 func (p *WorkerPool) executeTask(task Task) Result {
 	startTime := time.Now()
 
@@ -203,8 +222,20 @@ func (p *WorkerPool) executeTask(task Task) Result {
 		defer cancel()
 	}
 
-	// Execute the task
-	value, err := task.Execute(ctx)
+	// Execute the task with panic recovery
+	var value interface{}
+	var err error
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("task panicked: %v", r)
+				atomic.AddInt64(&p.metrics.PanickedTasks, 1)
+			}
+		}()
+		value, err = task.Execute(ctx)
+	}()
+
 	duration := time.Since(startTime)
 
 	// Update metrics
@@ -368,6 +399,9 @@ func (p *WorkerPool) Metrics() *PoolMetrics {
 		FailedTasks: atomic.LoadInt64(
 			&p.metrics.FailedTasks,
 		),
+		PanickedTasks: atomic.LoadInt64(
+			&p.metrics.PanickedTasks,
+		),
 		TotalLatencyUs: atomic.LoadInt64(
 			&p.metrics.TotalLatencyUs,
 		),
@@ -385,6 +419,56 @@ func (p *WorkerPool) QueueLength() int {
 // ActiveWorkers returns the number of currently active workers
 func (p *WorkerPool) ActiveWorkers() int {
 	return int(atomic.LoadInt64(&p.metrics.ActiveWorkers))
+}
+
+// WorkerCount returns the current number of workers in the pool
+func (p *WorkerPool) WorkerCount() int {
+	return int(atomic.LoadInt32(&p.workerCount))
+}
+
+// Resize dynamically adjusts the number of workers in the pool
+// Returns error if pool is not running or newSize is invalid
+func (p *WorkerPool) Resize(newSize int) error {
+	if newSize <= 0 {
+		return fmt.Errorf("worker count must be positive, got %d", newSize)
+	}
+
+	p.mu.Lock()
+	if !p.started || p.closed {
+		p.mu.Unlock()
+		return fmt.Errorf("pool is not running")
+	}
+	p.mu.Unlock()
+
+	p.resizeMu.Lock()
+	defer p.resizeMu.Unlock()
+
+	currentCount := int(atomic.LoadInt32(&p.workerCount))
+
+	if newSize > currentCount {
+		// Scale up: add more workers
+		for i := currentCount; i < newSize; i++ {
+			p.wg.Add(1)
+			atomic.AddInt32(&p.workerCount, 1)
+			go p.worker(i)
+		}
+	} else if newSize < currentCount {
+		// Scale down: signal workers to stop
+		toRemove := currentCount - newSize
+		for i := 0; i < toRemove; i++ {
+			select {
+			case p.stopWorkers <- struct{}{}:
+				// Successfully signaled one worker to stop
+			case <-p.ctx.Done():
+				return fmt.Errorf("pool context cancelled during resize")
+			}
+		}
+	}
+
+	// Update config to reflect new size
+	p.config.Workers = newSize
+
+	return nil
 }
 
 // IsRunning returns whether the pool is running

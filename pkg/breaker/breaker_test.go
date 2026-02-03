@@ -252,3 +252,61 @@ func TestCircuitBreaker_HalfOpen_MultipleProbes(t *testing.T) {
 	}
 	assert.Equal(t, Closed, cb.State())
 }
+
+func TestCircuitBreaker_HalfOpen_RejectsExcessRequests(t *testing.T) {
+	// Test the path where halfOpenAllowed <= 0 in half-open state
+	cb := New(&Config{
+		MaxFailures:      1,
+		Timeout:          50 * time.Millisecond,
+		HalfOpenRequests: 1, // Only allow 1 probe request
+	})
+
+	// Trip the breaker
+	_ = cb.Execute(func() error {
+		return fmt.Errorf("error")
+	})
+	assert.Equal(t, Open, cb.State())
+
+	// Wait for half-open
+	time.Sleep(60 * time.Millisecond)
+	assert.Equal(t, HalfOpen, cb.State())
+
+	// First request should be allowed (uses up the halfOpenAllowed)
+	var firstCallMade bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := cb.Execute(func() error {
+			firstCallMade = true
+			time.Sleep(50 * time.Millisecond) // Hold the lock
+			return nil
+		})
+		require.NoError(t, err)
+	}()
+
+	// Give the first goroutine time to start
+	time.Sleep(10 * time.Millisecond)
+
+	// Second request should be rejected because halfOpenAllowed is 0
+	err := cb.Execute(func() error {
+		return nil
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "circuit breaker is open")
+
+	wg.Wait()
+	assert.True(t, firstCallMade)
+}
+
+func TestCircuitBreaker_New_ZeroHalfOpenRequests(t *testing.T) {
+	// Test that HalfOpenRequests <= 0 defaults to 1
+	cb := New(&Config{
+		MaxFailures:      1,
+		Timeout:          50 * time.Millisecond,
+		HalfOpenRequests: 0, // Should default to 1
+	})
+
+	// Verify the config was adjusted
+	assert.Equal(t, 1, cb.config.HalfOpenRequests)
+}

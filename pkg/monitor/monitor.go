@@ -62,12 +62,17 @@ func DefaultConfig() *Config {
 	}
 }
 
+// ResourceGetter is a function that retrieves system resources.
+// This allows for dependency injection in tests.
+type ResourceGetter func(ctx context.Context) (*SystemResources, error)
+
 // ResourceMonitor collects system resource snapshots.
 type ResourceMonitor struct {
-	config *Config
-	latest *SystemResources
-	mu     sync.RWMutex
-	cancel context.CancelFunc
+	config         *Config
+	latest         *SystemResources
+	mu             sync.RWMutex
+	cancel         context.CancelFunc
+	resourceGetter ResourceGetter
 }
 
 // New creates a new ResourceMonitor with the given configuration.
@@ -81,9 +86,16 @@ func New(cfg *Config) *ResourceMonitor {
 	if cfg.CPUSampleTime <= 0 {
 		cfg.CPUSampleTime = 200 * time.Millisecond
 	}
-	return &ResourceMonitor{
+	m := &ResourceMonitor{
 		config: cfg,
 	}
+	m.resourceGetter = m.GetSystemResources
+	return m
+}
+
+// SetResourceGetter allows setting a custom resource getter for testing.
+func (m *ResourceMonitor) SetResourceGetter(getter ResourceGetter) {
+	m.resourceGetter = getter
 }
 
 // GetSystemResources collects and returns a snapshot of current
@@ -158,7 +170,7 @@ func (m *ResourceMonitor) Start(ctx context.Context) error {
 	ctx, m.cancel = context.WithCancel(ctx)
 
 	// Collect once immediately
-	res, err := m.GetSystemResources(ctx)
+	res, err := m.resourceGetter(ctx)
 	if err != nil {
 		return fmt.Errorf("initial collection failed: %w", err)
 	}
@@ -194,7 +206,7 @@ func (m *ResourceMonitor) collectLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			res, err := m.GetSystemResources(ctx)
+			res, err := m.resourceGetter(ctx)
 			if err != nil {
 				continue
 			}

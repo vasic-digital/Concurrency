@@ -1,0 +1,302 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>limiter: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">digital.vasic.concurrency/pkg/limiter/limiter.go (98.2%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package limiter
+
+import (
+        "context"
+        "sync"
+        "time"
+)
+
+// RateLimiter is the common interface for rate limiting strategies.
+type RateLimiter interface {
+        // Allow reports whether a single event may happen now.
+        // It does not block.
+        Allow(ctx context.Context) bool
+
+        // Wait blocks until a single event is allowed or the context
+        // is cancelled.
+        Wait(ctx context.Context) error
+}
+
+// ---------- Token Bucket ----------
+
+// TokenBucketConfig configures a token bucket rate limiter.
+type TokenBucketConfig struct {
+        Rate     float64 // Tokens added per second
+        Capacity int     // Maximum burst size (bucket capacity)
+}
+
+// TokenBucket implements a token bucket rate limiter.
+type TokenBucket struct {
+        rate     float64
+        capacity int
+        tokens   float64
+        lastTime time.Time
+        mu       sync.Mutex
+}
+
+// NewTokenBucket creates a new token bucket rate limiter.
+// The bucket starts full.
+func NewTokenBucket(cfg *TokenBucketConfig) *TokenBucket <span class="cov3" title="11">{
+        if cfg == nil </span><span class="cov1" title="1">{
+                cfg = &amp;TokenBucketConfig{Rate: 10, Capacity: 10}
+        }</span>
+        <span class="cov3" title="11">return &amp;TokenBucket{
+                rate:     cfg.Rate,
+                capacity: cfg.Capacity,
+                tokens:   float64(cfg.Capacity),
+                lastTime: time.Now(),
+        }</span>
+}
+
+// refill adds tokens based on elapsed time. Must be called with
+// the mutex held.
+func (tb *TokenBucket) refill() <span class="cov10" title="26236">{
+        now := time.Now()
+        elapsed := now.Sub(tb.lastTime).Seconds()
+        tb.tokens += elapsed * tb.rate
+        if tb.tokens &gt; float64(tb.capacity) </span><span class="cov9" title="26171">{
+                tb.tokens = float64(tb.capacity)
+        }</span>
+        <span class="cov10" title="26236">tb.lastTime = now</span>
+}
+
+// Allow reports whether one token can be consumed right now.
+func (tb *TokenBucket) Allow(ctx context.Context) bool <span class="cov10" title="26236">{
+        tb.mu.Lock()
+        defer tb.mu.Unlock()
+
+        tb.refill()
+        if tb.tokens &gt;= 1.0 </span><span class="cov9" title="26226">{
+                tb.tokens -= 1.0
+                return true
+        }</span>
+        <span class="cov3" title="10">return false</span>
+}
+
+// Wait blocks until one token is available or the context is
+// cancelled.
+func (tb *TokenBucket) Wait(ctx context.Context) error <span class="cov9" title="12498">{
+        for </span><span class="cov9" title="12500">{
+                if tb.Allow(ctx) </span><span class="cov9" title="12496">{
+                        return nil
+                }</span>
+
+                // Calculate wait time for next token
+                <span class="cov2" title="4">tb.mu.Lock()
+                var waitDur time.Duration
+                if tb.rate &gt; 0 </span><span class="cov1" title="3">{
+                        deficit := 1.0 - tb.tokens
+                        if deficit &lt; 0 </span><span class="cov0" title="0">{
+                                deficit = 0
+                        }</span>
+                        <span class="cov1" title="3">waitDur = time.Duration(
+                                deficit / tb.rate * float64(time.Second),
+                        )
+                        if waitDur &lt; time.Millisecond </span><span class="cov1" title="2">{
+                                waitDur = time.Millisecond
+                        }</span>
+                } else<span class="cov1" title="1"> {
+                        waitDur = 100 * time.Millisecond
+                }</span>
+                <span class="cov2" title="4">tb.mu.Unlock()
+
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov1" title="2">
+                        return ctx.Err()</span>
+                case &lt;-time.After(waitDur):<span class="cov1" title="2"></span>
+                        // retry
+                }
+        }
+}
+
+// ---------- Sliding Window ----------
+
+// SlidingWindowConfig configures a sliding window rate limiter.
+type SlidingWindowConfig struct {
+        WindowSize  time.Duration // Duration of the sliding window
+        MaxRequests int           // Maximum requests per window
+}
+
+// SlidingWindow implements a sliding window rate limiter.
+type SlidingWindow struct {
+        windowSize  time.Duration
+        maxRequests int
+        timestamps  []time.Time
+        mu          sync.Mutex
+}
+
+// NewSlidingWindow creates a new sliding window rate limiter.
+func NewSlidingWindow(cfg *SlidingWindowConfig) *SlidingWindow <span class="cov2" title="8">{
+        if cfg == nil </span><span class="cov1" title="1">{
+                cfg = &amp;SlidingWindowConfig{
+                        WindowSize:  time.Second,
+                        MaxRequests: 100,
+                }
+        }</span>
+        <span class="cov2" title="8">return &amp;SlidingWindow{
+                windowSize:  cfg.WindowSize,
+                maxRequests: cfg.MaxRequests,
+                timestamps:  make([]time.Time, 0, cfg.MaxRequests),
+        }</span>
+}
+
+// cleanup removes timestamps outside the window. Must be called
+// with the mutex held.
+func (sw *SlidingWindow) cleanup() <span class="cov4" title="83">{
+        cutoff := time.Now().Add(-sw.windowSize)
+        i := 0
+        for i &lt; len(sw.timestamps) &amp;&amp; sw.timestamps[i].Before(cutoff) </span><span class="cov2" title="4">{
+                i++
+        }</span>
+        <span class="cov4" title="83">if i &gt; 0 </span><span class="cov1" title="3">{
+                sw.timestamps = sw.timestamps[i:]
+        }</span>
+}
+
+// Allow reports whether a single request is allowed right now.
+func (sw *SlidingWindow) Allow(ctx context.Context) bool <span class="cov4" title="83">{
+        sw.mu.Lock()
+        defer sw.mu.Unlock()
+
+        sw.cleanup()
+        if len(sw.timestamps) &lt; sw.maxRequests </span><span class="cov4" title="65">{
+                sw.timestamps = append(sw.timestamps, time.Now())
+                return true
+        }</span>
+        <span class="cov3" title="18">return false</span>
+}
+
+// Wait blocks until a request is allowed or the context is
+// cancelled.
+func (sw *SlidingWindow) Wait(ctx context.Context) error <span class="cov1" title="3">{
+        for </span><span class="cov3" title="18">{
+                if sw.Allow(ctx) </span><span class="cov1" title="2">{
+                        return nil
+                }</span>
+
+                // Wait a fraction of the window before retrying
+                <span class="cov3" title="16">waitDur := sw.windowSize / 10
+                if waitDur &lt; time.Millisecond </span><span class="cov2" title="5">{
+                        waitDur = time.Millisecond
+                }</span>
+
+                <span class="cov3" title="16">select </span>{
+                case &lt;-ctx.Done():<span class="cov1" title="1">
+                        return ctx.Err()</span>
+                case &lt;-time.After(waitDur):<span class="cov3" title="15"></span>
+                        // retry
+                }
+        }
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

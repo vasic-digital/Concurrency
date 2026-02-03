@@ -220,3 +220,196 @@ func TestRateLimiter_InterfaceCompliance(t *testing.T) {
 		})
 	}
 }
+
+// ---------- Edge Case Tests ----------
+
+func TestTokenBucket_Wait_ZeroRate(t *testing.T) {
+	// Test the path where rate <= 0 in Wait (line 98-99)
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     0, // Zero rate
+		Capacity: 1,
+	})
+
+	// Drain the token
+	tb.Allow(context.Background())
+
+	// Wait with short timeout - should use the 100ms fallback wait
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 50*time.Millisecond,
+	)
+	defer cancel()
+
+	err := tb.Wait(ctx)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestTokenBucket_Wait_DeficitNegative(t *testing.T) {
+	// Test the path where deficit calculation results in < 0
+	// This happens when tokens are refilled between Allow returning false
+	// and the deficit calculation
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     10000, // Very high rate - refills quickly
+		Capacity: 2,
+	})
+
+	// Drain bucket
+	tb.Allow(context.Background())
+	tb.Allow(context.Background())
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	// Should succeed because high rate will refill quickly
+	err := tb.Wait(ctx)
+	require.NoError(t, err)
+}
+
+func TestSlidingWindow_Wait_ShortWindowSize(t *testing.T) {
+	// Test the path where waitDur < time.Millisecond (line 179-180)
+	sw := NewSlidingWindow(&SlidingWindowConfig{
+		WindowSize:  5 * time.Millisecond, // Very short window
+		MaxRequests: 1,
+	})
+
+	// Use the single allowed request
+	sw.Allow(context.Background())
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	// Wait should use 1ms minimum wait even though window/10 < 1ms
+	err := sw.Wait(ctx)
+	require.NoError(t, err)
+}
+
+func TestTokenBucket_Wait_DeficitBecomesNegative(t *testing.T) {
+	// Test the path where deficit < 0 in Wait (lines 89-91)
+	// This happens when tokens refill between Allow returning false
+	// and the deficit calculation, making tokens >= 1
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     100000, // Extremely high rate - refills very fast
+		Capacity: 1,
+	})
+
+	// Drain the bucket
+	tb.Allow(context.Background())
+
+	// At this rate, the bucket will refill almost immediately,
+	// so when Wait runs the deficit calculation, deficit may be <= 0
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	err := tb.Wait(ctx)
+	require.NoError(t, err)
+}
+
+func TestTokenBucket_Wait_ConcurrentAccess_DeficitPath(t *testing.T) {
+	// Test concurrent access to try to hit the deficit < 0 path
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     1000000, // Very high rate
+		Capacity: 10,
+	})
+
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	// Multiple goroutines doing Allow and Wait concurrently
+	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					tb.Allow(context.Background())
+				}
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Millisecond)
+					_ = tb.Wait(waitCtx)
+					waitCancel()
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestTokenBucket_Wait_DeficitNegativeViaHook tests the deficit < 0 path
+// using the test hook to simulate a race condition where tokens increase
+// between Allow() returning false and the deficit calculation.
+func TestTokenBucket_Wait_DeficitNegativeViaHook(t *testing.T) {
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     10,
+		Capacity: 2,
+	})
+
+	// Drain the bucket
+	tb.Allow(context.Background())
+	tb.Allow(context.Background())
+
+	// Set up the hook to add tokens after Allow() returns false
+	// but before the deficit calculation. This simulates the race
+	// condition where tokens are refilled by another goroutine.
+	hookCalled := false
+	tb.testHook = func(bucket *TokenBucket) {
+		if !hookCalled {
+			hookCalled = true
+			// Add tokens to make deficit negative
+			bucket.mu.Lock()
+			bucket.tokens = 2.0 // More than 1.0, so deficit will be < 0
+			bucket.mu.Unlock()
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	// Wait should succeed because the hook adds tokens
+	err := tb.Wait(ctx)
+	require.NoError(t, err)
+	assert.True(t, hookCalled, "test hook should have been called")
+}
+
+// TestTokenBucket_Wait_TestHookNil verifies Wait works normally when
+// testHook is nil.
+func TestTokenBucket_Wait_TestHookNil(t *testing.T) {
+	tb := NewTokenBucket(&TokenBucketConfig{
+		Rate:     1000,
+		Capacity: 1,
+	})
+
+	// Drain the bucket
+	tb.Allow(context.Background())
+
+	// testHook is nil by default
+	assert.Nil(t, tb.testHook)
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 100*time.Millisecond,
+	)
+	defer cancel()
+
+	err := tb.Wait(ctx)
+	require.NoError(t, err)
+}
