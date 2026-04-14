@@ -1,0 +1,8 @@
+Commit: 2afc91509bddc6473367fa187ffcf098fa939aa1
+Branch: main
+2afc915 Merge remote-tracking branch 'gitlab/main'
+858f4a6 fix(tests/integration): relax flaky AverageLatency > 0 assertion
+99980c0 Add GitHub Sponsors button for vasic-digital
+74ba2bc security: Add mandatory NO SUDO/ROOT execution constraint
+34db986 feat: v2.2.0 comprehensive completion — edge tests, version alignment
+
