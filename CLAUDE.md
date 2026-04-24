@@ -10,15 +10,12 @@ same session as the change.** Coverage and green suites are not evidence.
 
 ### Acceptance demo for this module
 
-<!-- TODO: replace this block with the exact command(s) that exercise this
-     module end-to-end against real dependencies, and the expected output.
-     The commands must run the real artifact (built binary, deployed
-     container, real service) — no in-process fakes, no mocks, no
-     `httptest.NewServer`, no Robolectric, no JSDOM as proof of done. -->
-
 ```bash
-# TODO
+# Worker pool, rate limiter, circuit breaker under load
+cd Concurrency && GOMAXPROCS=2 nice -n 19 go test -count=1 -race -v ./tests/integration/...
 ```
+Expect: all integration tests PASS; exercises `pool.NewWorkerPool`, `queue.New[T]`, `limiter.NewTokenBucket`, `breaker.New`, `semaphore.New(10)` per `Concurrency/README.md` Quick Start.
+
 
 ## Overview
 
