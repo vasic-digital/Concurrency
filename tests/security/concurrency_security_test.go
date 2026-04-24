@@ -17,7 +17,7 @@ import (
 
 func TestSecurity_WorkerPoolPanicIsolation(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -45,7 +45,7 @@ func TestSecurity_WorkerPoolPanicIsolation(t *testing.T) {
 
 func TestSecurity_WorkerPoolClosedSubmit(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -64,7 +64,7 @@ func TestSecurity_WorkerPoolClosedSubmit(t *testing.T) {
 
 func TestSecurity_SemaphoreExcessWeight(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(5)
@@ -80,7 +80,7 @@ func TestSecurity_SemaphoreExcessWeight(t *testing.T) {
 
 func TestSecurity_SemaphoreContextCancellation(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(1)
@@ -96,7 +96,7 @@ func TestSecurity_SemaphoreContextCancellation(t *testing.T) {
 
 func TestSecurity_CircuitBreakerReset(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	cb := breaker.New(&breaker.Config{
@@ -120,7 +120,7 @@ func TestSecurity_CircuitBreakerReset(t *testing.T) {
 
 func TestSecurity_PriorityQueueEmptyPop(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	pq := queue.New[int](0)
@@ -138,7 +138,7 @@ func TestSecurity_PriorityQueueEmptyPop(t *testing.T) {
 
 func TestSecurity_WorkerPoolResizeInvalid(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -158,7 +158,7 @@ func TestSecurity_WorkerPoolResizeInvalid(t *testing.T) {
 
 func TestSecurity_SemaphoreZeroWeight(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping security test in short mode")
+		t.Skip("skipping security test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(3)
