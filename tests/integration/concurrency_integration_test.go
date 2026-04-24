@@ -19,7 +19,7 @@ import (
 
 func TestWorkerPoolSubmitAndCollect(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -56,7 +56,7 @@ func TestWorkerPoolSubmitAndCollect(t *testing.T) {
 
 func TestWorkerPoolMetrics(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -103,7 +103,7 @@ func TestWorkerPoolMetrics(t *testing.T) {
 
 func TestCircuitBreakerStateTransitions(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	cb := breaker.New(&breaker.Config{
@@ -137,7 +137,7 @@ func TestCircuitBreakerStateTransitions(t *testing.T) {
 
 func TestPriorityQueueOrdering(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	pq := queue.New[string](10)
@@ -170,7 +170,7 @@ func TestPriorityQueueOrdering(t *testing.T) {
 
 func TestSemaphoreAcquireRelease(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(3)
@@ -197,7 +197,7 @@ func TestSemaphoreAcquireRelease(t *testing.T) {
 
 func TestTokenBucketRateLimiter(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	rl := limiter.NewTokenBucket(&limiter.TokenBucketConfig{
@@ -222,7 +222,7 @@ func TestTokenBucketRateLimiter(t *testing.T) {
 
 func TestSlidingWindowRateLimiter(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	rl := limiter.NewSlidingWindow(&limiter.SlidingWindowConfig{
@@ -243,7 +243,7 @@ func TestSlidingWindowRateLimiter(t *testing.T) {
 
 func TestWorkerPoolResize(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
+		t.Skip("skipping integration test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
