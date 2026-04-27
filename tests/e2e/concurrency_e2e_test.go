@@ -19,7 +19,7 @@ import (
 
 func TestE2E_WorkerPoolLifecycle(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	var processedCount int64
@@ -64,7 +64,7 @@ func TestE2E_WorkerPoolLifecycle(t *testing.T) {
 
 func TestE2E_ParallelExecute(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	fns := make([]func(ctx context.Context) (interface{}, error), 5)
@@ -87,7 +87,7 @@ func TestE2E_ParallelExecute(t *testing.T) {
 
 func TestE2E_CircuitBreakerRecovery(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	cb := breaker.New(&breaker.Config{
@@ -129,7 +129,7 @@ func TestE2E_CircuitBreakerRecovery(t *testing.T) {
 
 func TestE2E_SemaphoreResourceControl(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(2)
@@ -166,7 +166,7 @@ func TestE2E_SemaphoreResourceControl(t *testing.T) {
 
 func TestE2E_PriorityQueueTaskScheduling(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	pq := queue.New[string](0)
@@ -194,7 +194,7 @@ func TestE2E_PriorityQueueTaskScheduling(t *testing.T) {
 
 func TestE2E_RateLimiterWait(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	rl := limiter.NewTokenBucket(&limiter.TokenBucketConfig{
@@ -222,7 +222,7 @@ func TestE2E_RateLimiterWait(t *testing.T) {
 
 func TestE2E_WorkerPoolPanicRecovery(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+		t.Skip("skipping e2e test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{

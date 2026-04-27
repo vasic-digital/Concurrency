@@ -21,7 +21,7 @@ import (
 
 func TestStress_WorkerPoolHighThroughput(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -54,7 +54,7 @@ func TestStress_WorkerPoolHighThroughput(t *testing.T) {
 
 func TestStress_ConcurrentPriorityQueue(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	pq := queue.New[int](0)
@@ -88,7 +88,7 @@ func TestStress_ConcurrentPriorityQueue(t *testing.T) {
 
 func TestStress_ConcurrentSemaphore(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	sem := semaphore.New(5)
@@ -125,7 +125,7 @@ func TestStress_ConcurrentSemaphore(t *testing.T) {
 
 func TestStress_ConcurrentCircuitBreaker(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	cb := breaker.New(&breaker.Config{
@@ -161,7 +161,7 @@ func TestStress_ConcurrentCircuitBreaker(t *testing.T) {
 
 func TestStress_WorkerPoolConcurrentSubmit(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	p := pool.NewWorkerPool(&pool.PoolConfig{
@@ -197,7 +197,7 @@ func TestStress_WorkerPoolConcurrentSubmit(t *testing.T) {
 
 func TestStress_PriorityQueueMixedOperations(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping stress test in short mode")
+		t.Skip("skipping stress test in short mode")  // SKIP-OK: #short-mode
 	}
 
 	pq := queue.New[string](0)
