@@ -24,3 +24,10 @@ go.work
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+reports/demos/
