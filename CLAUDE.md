@@ -161,3 +161,54 @@ Both must PASS.
 
 <!-- END host-power-management addendum (CONST-033) -->
 
+
+
+## Sixth Law — Real User Verification (Anti-Pseudo-Test Rule)
+
+> Inherits from the root project's Anti-Bluff Testing Pact and the cross-project
+> universal mandate (CONST-035). Submodule rules below are additive, never
+> relaxing.
+
+A test that passes while the feature it covers is broken for end users is the
+most expensive kind of test in this codebase — it converts unknown breakage into
+believed safety. This has happened in consuming projects before: tests and
+Integration Challenge Tests executed green while large parts of the product
+were unusable on a real device. That outcome is a constitutional failure, not a
+coverage failure, and it MUST NOT recur in any module that depends on or is
+depended on by this one.
+
+Every test added MUST satisfy ALL of the following. Violation of any of them is
+a release blocker, irrespective of coverage metrics, CI status, reviewer
+sign-off, or schedule pressure.
+
+1. **Same surfaces the user touches.** The test must traverse the production
+   code path the user's action triggers, end to end, with no shortcut that
+   bypasses real wiring.
+
+2. **Provably falsifiable on real defects.** Before merging, the author MUST
+   run the test once with the underlying feature deliberately broken (throw
+   inside the function, return the wrong row, return the wrong status) and
+   confirm the test fails with a clear assertion message. The PR description
+   MUST state which deliberate break was used and what failure the test
+   produced. A test that cannot be made to fail by breaking the thing it claims
+   to verify is a bluff test by definition.
+
+3. **Primary assertion on user-visible state.** The chief failure signal MUST
+   be on something a real consumer could see or measure: rendered output,
+   persisted database row, HTTP response body / status / header, file written
+   to disk, packet on the wire. "Mock was invoked N times" is a permitted
+   secondary assertion, never the primary one.
+
+4. **Integration / Challenge tests are the load-bearing acceptance gate.** A
+   green Challenge Test means a real consumer can complete the flow against
+   real services — not "the wiring compiles". A feature for which a Challenge
+   Test cannot be written is, by definition, not shippable.
+
+5. **CI green is necessary, not sufficient.** Before any release tag is cut, a
+   human (or a scripted black-box runner) MUST have exercised the feature
+   end-to-end and observed the user-visible outcome.
+
+6. **Inheritance.** This rule applies recursively to every consumer of this
+   submodule. Consumer constitutions MAY add stricter rules but MUST NOT relax
+   this one.
+
