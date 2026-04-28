@@ -97,103 +97,59 @@ A change is done when:
 - `docs/HOST_POWER_MANAGEMENT.md` — CONST-033 background and runbook.
 
 
-## Sixth Law — Real User Verification (Anti-Pseudo-Test Rule)
+<!-- CONST-035 anti-bluff addendum (cascaded) -->
 
-> Inherits from the root project's Anti-Bluff Testing Pact and the cross-project
-> universal mandate (CONST-035). Submodule rules below are additive, never
-> relaxing.
+## CONST-035 — Anti-Bluff Tests & Challenges (mandatory; inherits from root)
 
-A test that passes while the feature it covers is broken for end users is the
-most expensive kind of test in this codebase — it converts unknown breakage into
-believed safety. This has happened in consuming projects before: tests and
-Integration Challenge Tests executed green while large parts of the product
-were unusable on a real device. That outcome is a constitutional failure, not a
-coverage failure, and it MUST NOT recur in any module that depends on or is
-depended on by this one.
+Tests and Challenges in this submodule MUST verify the product, not
+the LLM's mental model of the product. A test that passes when the
+feature is broken is worse than a missing test — it gives false
+confidence and lets defects ship to users. Functional probes at the
+protocol layer are mandatory:
 
-Every test added MUST satisfy ALL of the following. Violation of any of them is
-a release blocker, irrespective of coverage metrics, CI status, reviewer
-sign-off, or schedule pressure.
+- TCP-open is the FLOOR, not the ceiling. Postgres → execute
+  `SELECT 1`. Redis → `PING` returns `PONG`. ChromaDB → `GET
+  /api/v1/heartbeat` returns 200. MCP server → TCP connect + valid
+  JSON-RPC handshake. HTTP gateway → real request, real response,
+  non-empty body.
+- Container `Up` is NOT application healthy. A `docker/podman ps`
+  `Up` status only means PID 1 is running; the application may be
+  crash-looping internally.
+- No mocks/fakes outside unit tests (already CONST-030; CONST-035
+  raises the cost of a mock-driven false pass to the same severity
+  as a regression).
+- Re-verify after every change. Don't assume a previously-passing
+  test still verifies the same scope after a refactor.
+- Verification of CONST-035 itself: deliberately break the feature
+  (e.g. `kill <service>`, swap a password). The test MUST fail. If
+  it still passes, the test is non-conformant and MUST be tightened.
 
-1. **Same surfaces the user touches.** The test must traverse the production
-   code path the user's action triggers, end to end, with no shortcut that
-   bypasses real wiring.
+## CONST-033 clarification — distinguishing host events from sluggishness
 
-2. **Provably falsifiable on real defects.** Before merging, the author MUST
-   run the test once with the underlying feature deliberately broken (throw
-   inside the function, return the wrong row, return the wrong status) and
-   confirm the test fails with a clear assertion message. The PR description
-   MUST state which deliberate break was used and what failure the test
-   produced. A test that cannot be made to fail by breaking the thing it claims
-   to verify is a bluff test by definition.
+Heavy container builds (BuildKit pulling many GB of layers, parallel
+podman/docker compose-up across many services) can make the host
+**appear** unresponsive — high load average, slow SSH, watchers
+timing out. **This is NOT a CONST-033 violation.** Suspend / hibernate
+/ logout are categorically different events. Distinguish via:
 
-3. **Primary assertion on user-visible state.** The chief failure signal MUST
-   be on something a real consumer could see or measure: rendered output,
-   persisted database row, HTTP response body / status / header, file written
-   to disk, packet on the wire. "Mock was invoked N times" is a permitted
-   secondary assertion, never the primary one.
+- `uptime` — recent boot? if so, the host actually rebooted.
+- `loginctl list-sessions` — session(s) still active? if yes, no logout.
+- `journalctl ... | grep -i 'will suspend\|hibernate'` — zero broadcasts
+  since the CONST-033 fix means no suspend ever happened.
+- `dmesg | grep -i 'killed process\|out of memory'` — OOM kills are
+  also NOT host-power events; they're memory-pressure-induced and
+  require their own separate fix (lower per-container memory limits,
+  reduce parallelism).
 
-4. **Integration / Challenge tests are the load-bearing acceptance gate.** A
-   green Challenge Test means a real consumer can complete the flow against
-   real services — not "the wiring compiles". A feature for which a Challenge
-   Test cannot be written is, by definition, not shippable.
+A sluggish host under build pressure recovers when the build finishes;
+a suspended host requires explicit unsuspend (and CONST-033 should
+make that impossible by hardening `IdleAction=ignore` +
+`HandleSuspendKey=ignore` + masked `sleep.target`,
+`suspend.target`, `hibernate.target`, `hybrid-sleep.target`).
 
-5. **CI green is necessary, not sufficient.** Before any release tag is cut, a
-   human (or a scripted black-box runner) MUST have exercised the feature
-   end-to-end and observed the user-visible outcome.
-
-6. **Inheritance.** This rule applies recursively to every consumer of this
-   submodule. Consumer constitutions MAY add stricter rules but MUST NOT relax
-   this one.
-
-
-<!-- BEGIN anti-bluff-testing addendum (Article XI) -->
-
-## Article XI — Anti-Bluff Testing (MANDATORY)
-
-**Inherited from the umbrella project's Constitution Article XI.
-Tests and Challenges that pass without exercising real end-user
-behaviour are forbidden in this submodule too.**
-
-Every test, every Challenge, every HelixQA bank entry MUST:
-
-1. **Assert on a concrete end-user-visible outcome** — rendered DOM,
-   DB rows that a real query would return, files on disk, media that
-   actually plays, search results that actually contain expected
-   items. Not "no error" or "200 OK".
-2. **Run against the real system below the assertion.** Mocks/stubs
-   are permitted ONLY in unit tests (`*_test.go` under `go test
-   -short` or language equivalent). Integration / E2E / Challenge /
-   HelixQA tests use real containers, real databases, real
-   renderers. Unreachable real-system → skip with `SKIP-OK:
-   #<ticket>`, never silently pass.
-3. **Include a matching negative.** Every positive assertion is
-   paired with an assertion that fails when the feature is broken.
-4. **Emit copy-pasteable evidence** — body, screenshot, frame, DB
-   row, log excerpt. Boolean pass/fail is insufficient.
-5. **Verify "fails when feature is removed."** Author runs locally
-   with the feature commented out; the test MUST FAIL. If it still
-   passes, it's a bluff — delete and rewrite.
-6. **No blind shells.** No `&& echo PASS`, `|| true`, `tee` exit
-   laundering, `if [ -f file ]` without content assertion.
-
-**Challenges in this submodule** must replay the user journey
-end-to-end through the umbrella project's deliverables — never via
-raw `curl` or third-party scripts. Sub-1-second Challenges almost
-always indicate a bluff.
-
-**HelixQA banks** declare executable actions
-(`adb_shell:`, `playwright:`, `http:`, `assertVisible:`,
-`assertNotVisible:`), never prose. Stagnation guard from Article I
-§1.3 applies — frame N+1 identical to frame N for >10 s = FAIL.
-
-**PR requirement:** every PR adding/modifying a test or Challenge in
-this submodule MUST include a fenced `## Anti-Bluff Verification`
-block with: (a) command run, (b) pasted output, (c) proof the test
-fails when the feature is broken (second run with feature
-commented-out showing FAIL).
-
-**Cross-reference:** umbrella `CONSTITUTION.md` Article XI
-(§§ 11.1 — 11.8).
-
-<!-- END anti-bluff-testing addendum (Article XI) -->
+If you observe what looks like a suspend during heavy builds, the
+correct first action is **not** "edit CONST-033" but `bash
+challenges/scripts/host_no_auto_suspend_challenge.sh` to confirm the
+hardening is intact. If hardening is intact AND no suspend
+broadcast appears in journal, the perceived event was build-pressure
+sluggishness, not a power transition.
