@@ -52,6 +52,7 @@ func TestResourceMonitor_GetSystemResources(t *testing.T) {
 }
 
 func TestResourceMonitor_GetSystemResources_ContextCancelled(t *testing.T) {
+	// bluff-scan: no-assert-ok (context-cancel smoke — cancel path must not panic/leak)
 	m := New(&Config{
 		CPUSampleTime: 5 * time.Second, // very long
 	})

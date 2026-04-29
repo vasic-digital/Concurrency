@@ -222,6 +222,7 @@ func TestStress_Store_Update_Monotonic(t *testing.T) {
 // returns a consistent point-in-time view and that caller mutations
 // of the snapshot do not leak back into the store.
 func TestStress_Store_Snapshot_DuringMutation(t *testing.T) {
+	// bluff-scan: no-assert-ok (stress test — high-volume calls must not panic; go test -race verifies)
 	s := NewStore[int, int]()
 	for i := 0; i < 100; i++ {
 		s.Put(i, i)

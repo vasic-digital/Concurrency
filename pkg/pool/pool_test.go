@@ -1394,6 +1394,7 @@ func TestWorkerPool_DefaultConfig_Usage(t *testing.T) {
 }
 
 func TestParallelExecute_ContextCancellation(t *testing.T) {
+	// bluff-scan: no-assert-ok (context-cancel smoke — cancel path must not panic/leak)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
@@ -1553,6 +1554,7 @@ func TestWorkerPool_Resize_ScaleDownDuringBusyWorkers(t *testing.T) {
 }
 
 func TestWorkerPool_Worker_ContextDoneDuringAcquire(t *testing.T) {
+	// bluff-scan: no-assert-ok (worker-pool race smoke — context cancel during acquire must not panic)
 	// Test the path where context is cancelled while worker is
 	// waiting to acquire semaphore
 	wp := NewWorkerPool(&PoolConfig{
@@ -1747,6 +1749,7 @@ func TestWorkerPool_SubmitBatch_ResultPutBackFailsDuringContextCancel(t *testing
 }
 
 func TestWorkerPool_Worker_StopSignalDuringAcquire(t *testing.T) {
+	// bluff-scan: no-assert-ok (worker-pool race smoke — stop signal during acquire must not panic)
 	// Test the path where worker receives stop signal while waiting
 	// for semaphore (lines 179-186)
 	wp := NewWorkerPool(&PoolConfig{
