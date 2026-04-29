@@ -88,6 +88,7 @@ func TestTokenBucket_DefaultConfig(t *testing.T) {
 }
 
 func TestTokenBucket_ConcurrentAccess(t *testing.T) {
+	// bluff-scan: no-assert-ok (concurrency test — go test -race catches data races; absence of panic == correctness)
 	tb := NewTokenBucket(&TokenBucketConfig{
 		Rate:     10000,
 		Capacity: 100,
@@ -177,6 +178,7 @@ func TestSlidingWindow_DefaultConfig(t *testing.T) {
 }
 
 func TestSlidingWindow_ConcurrentAccess(t *testing.T) {
+	// bluff-scan: no-assert-ok (concurrency test — go test -race catches data races; absence of panic == correctness)
 	sw := NewSlidingWindow(&SlidingWindowConfig{
 		WindowSize:  time.Second,
 		MaxRequests: 1000,
@@ -311,6 +313,7 @@ func TestTokenBucket_Wait_DeficitBecomesNegative(t *testing.T) {
 }
 
 func TestTokenBucket_Wait_ConcurrentAccess_DeficitPath(t *testing.T) {
+	// bluff-scan: no-assert-ok (concurrency test — go test -race catches data races; absence of panic == correctness)
 	// Test concurrent access to try to hit the deficit < 0 path
 	tb := NewTokenBucket(&TokenBucketConfig{
 		Rate:     1000000, // Very high rate
