@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1458,14 +1459,19 @@ func TestWorkerPool_Submit_ContextCancelledDuringSubmit(t *testing.T) {
 		return nil, nil
 	}))
 
-	// Either queue full or context cancelled
+	// Either queue full or context cancelled — both are acceptable race outcomes,
+	// but we must assert the specific path actually behaved correctly (Article XI).
 	if err != nil {
-		// Expected - queue full or context cancelled
-		assert.True(t, true)
+		assert.Truef(t,
+			strings.Contains(err.Error(), "queue is full") ||
+				strings.Contains(err.Error(), "context cancelled") ||
+				strings.Contains(err.Error(), "pool is closed"),
+			"unexpected error message: %q", err.Error())
 	} else {
-		// If no error, the queue accepted the task before we could
-		// hit the error path - this is also acceptable
-		assert.True(t, true)
+		// No error means the submit raced ahead of the cancel — verify the
+		// pool's queue actually accepted by checking metric counter advanced.
+		assert.GreaterOrEqual(t, atomic.LoadInt64(&wp.metrics.QueuedTasks), int64(1),
+			"queue accepted submit but QueuedTasks counter did not advance")
 	}
 
 	wp.Stop()
