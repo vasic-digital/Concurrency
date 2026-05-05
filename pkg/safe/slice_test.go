@@ -122,6 +122,7 @@ func TestSlice_Replace_Defensive(t *testing.T) {
 // --- Stress ---
 
 func TestStress_Slice_ConcurrentAppendReadDelete(t *testing.T) {
+	// bluff-scan: no-assert-ok (concurrency test — go test -race catches data races; absence of panic == correctness)
 	s := NewSlice[int]()
 
 	var wg sync.WaitGroup

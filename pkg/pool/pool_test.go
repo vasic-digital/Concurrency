@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1393,6 +1394,7 @@ func TestWorkerPool_DefaultConfig_Usage(t *testing.T) {
 }
 
 func TestParallelExecute_ContextCancellation(t *testing.T) {
+	// bluff-scan: no-assert-ok (context-cancel smoke — cancel path must not panic/leak)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
@@ -1458,14 +1460,19 @@ func TestWorkerPool_Submit_ContextCancelledDuringSubmit(t *testing.T) {
 		return nil, nil
 	}))
 
-	// Either queue full or context cancelled
+	// Either queue full or context cancelled — both are acceptable race outcomes,
+	// but we must assert the specific path actually behaved correctly (Article XI).
 	if err != nil {
-		// Expected - queue full or context cancelled
-		assert.True(t, true)
+		assert.Truef(t,
+			strings.Contains(err.Error(), "queue is full") ||
+				strings.Contains(err.Error(), "context cancelled") ||
+				strings.Contains(err.Error(), "pool is closed"),
+			"unexpected error message: %q", err.Error())
 	} else {
-		// If no error, the queue accepted the task before we could
-		// hit the error path - this is also acceptable
-		assert.True(t, true)
+		// No error means the submit raced ahead of the cancel — verify the
+		// pool's queue actually accepted by checking metric counter advanced.
+		assert.GreaterOrEqual(t, atomic.LoadInt64(&wp.metrics.QueuedTasks), int64(1),
+			"queue accepted submit but QueuedTasks counter did not advance")
 	}
 
 	wp.Stop()
@@ -1547,6 +1554,7 @@ func TestWorkerPool_Resize_ScaleDownDuringBusyWorkers(t *testing.T) {
 }
 
 func TestWorkerPool_Worker_ContextDoneDuringAcquire(t *testing.T) {
+	// bluff-scan: no-assert-ok (worker-pool race smoke — context cancel during acquire must not panic)
 	// Test the path where context is cancelled while worker is
 	// waiting to acquire semaphore
 	wp := NewWorkerPool(&PoolConfig{
@@ -1741,6 +1749,7 @@ func TestWorkerPool_SubmitBatch_ResultPutBackFailsDuringContextCancel(t *testing
 }
 
 func TestWorkerPool_Worker_StopSignalDuringAcquire(t *testing.T) {
+	// bluff-scan: no-assert-ok (worker-pool race smoke — stop signal during acquire must not panic)
 	// Test the path where worker receives stop signal while waiting
 	// for semaphore (lines 179-186)
 	wp := NewWorkerPool(&PoolConfig{
