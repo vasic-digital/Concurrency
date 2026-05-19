@@ -176,3 +176,69 @@ err := cb.Execute(func() error {
 
 fmt.Println(cb.State()) // Closed, Open, or HalfOpen
 ```
+
+## Configuration & Environment
+
+Concurrency primitives are configured via Go structs at construction time — there are no environment-variable knobs the library reads on its own, which is deliberate (`pkg/*` stays project-not-aware per CONST-051(B); the consuming service decides how to source its configuration).
+
+| Knob                                     | Where it lives                          | Default                | Notes                                                                  |
+|------------------------------------------|-----------------------------------------|------------------------|------------------------------------------------------------------------|
+| `PoolConfig.Workers`                     | `pkg/pool.PoolConfig{}`                 | `runtime.NumCPU()`     | Set higher for I/O-bound workloads.                                    |
+| `PoolConfig.QueueSize`                   | `pkg/pool.PoolConfig{}`                 | `1000`                 | Buffered task channel depth; saturating it makes `Submit` block.       |
+| `PoolConfig.TaskTimeout`                 | `pkg/pool.PoolConfig{}`                 | `0` (no per-task)      | Wraps each `Task.Execute(ctx)` with a `context.WithTimeout`.           |
+| `PoolConfig.ShutdownGrace`               | `pkg/pool.PoolConfig{}`                 | `5 * time.Second`      | Drain window before forced cancel during `Shutdown`.                   |
+| `TokenBucketConfig.Rate`                 | `pkg/limiter.TokenBucketConfig{}`       | none                   | Tokens/sec refill rate; `0` disables refill (pure burst).              |
+| `TokenBucketConfig.Capacity`             | `pkg/limiter.TokenBucketConfig{}`       | none                   | Burst capacity.                                                        |
+| `Config.MaxFailures`                     | `pkg/breaker.Config{}`                  | `5`                    | Consecutive failures before `Open` transition.                         |
+| `Config.Timeout`                         | `pkg/breaker.Config{}`                  | `30 * time.Second`     | How long to stay `Open` before promoting to `HalfOpen`.                |
+| `Config.HalfOpenRequests`                | `pkg/breaker.Config{}`                  | `1`                    | Probe requests allowed in `HalfOpen` before fully reclosing.           |
+| `Semaphore.New(weight)`                  | `pkg/semaphore.New(int64)`              | none                   | Total weight available; pass-through for `Acquire(ctx, n)`.            |
+
+## Edge Cases & Operational Notes
+
+- **WorkerPool stopping while submitting**: `Submit` returns an error after `Stop` is called — callers must check and propagate.
+- **TokenBucket with `Rate=0`**: pure burst mode (no refill). Useful for test fixtures and "one-shot" credit windows; the round-243 Challenge runner uses this to assert deterministic accept/reject counts.
+- **CircuitBreaker `HalfOpen` race**: a single successful probe closes the breaker; subsequent in-flight probes that finish *after* the close still count toward the success metrics (they don't reopen).
+- **Priority queue ties**: items with the same priority pop in FIFO order within their priority class (heap stability provided by the secondary index in `pkg/queue.item`).
+- **Weighted semaphore over-release**: `Release(n)` with `n > current` panics — callers must mirror Acquire/Release counts symmetrically (typically with `defer`).
+- **No host power-management**: per CONST-033, no code path in this submodule may suspend/hibernate/poweroff the host. Verified by `challenges/scripts/no_suspend_calls_challenge.sh`.
+
+## Anti-Bluff Posture (CONST-035, CONST-050, Article XI §11.9)
+
+Every claim of correctness in this submodule MUST carry positive runtime evidence captured during execution. Metadata-only / configuration-only / absence-of-error / grep-based PASS without runtime evidence are defects.
+
+| Layer                    | Mechanism                                                                                                  |
+|--------------------------|------------------------------------------------------------------------------------------------------------|
+| Pre-build                | `go vet ./...` + `go build ./...` — exits non-zero on any vet warning.                                     |
+| Post-build               | `go test ./... -count=1 -race` — every package, race detector on.                                          |
+| Runtime end-to-end       | `challenges/concurrency_describe_challenge.sh` exercises every primitive against bilingual fixtures.       |
+| Paired mutation (anti-bluff guard) | `bash challenges/concurrency_describe_challenge.sh --anti-bluff-mutate` corrupts the SR fixture; expects exit 99 (= the runner correctly rejected the corrupted fixture, proving its assertions are real). |
+
+### Reproduce the full pipeline
+
+```bash
+cd dependencies/vasic-digital/Concurrency
+bash challenges/concurrency_describe_challenge.sh
+# Evidence lands in challenges/.last-run/{01-vet,02-build,03-test,04-fixtures,05-runtime,06-mutation}.log
+```
+
+### Reproduce only the anti-bluff guard
+
+```bash
+bash challenges/concurrency_describe_challenge.sh --anti-bluff-mutate
+echo "exit=$?"   # 99 means anti-bluff guard verified
+```
+
+## Test-Type Coverage
+
+The full CONST-050(B) test-type coverage matrix for this submodule lives at [`docs/test-coverage.md`](docs/test-coverage.md). Summary: unit / integration / E2E / security / DDoS / scaling / chaos / stress / UI / UX / Challenges are `covered`; performance / benchmarking / HelixQA-enrolment are `planned`.
+
+## Governance
+
+This submodule inherits every clause of the HelixConstitution submodule (`constitution/Constitution.md`, `constitution/CLAUDE.md`, `constitution/AGENTS.md`). The full list of cascaded clauses (CONST-033 through CONST-061) and submodule-specific addenda lives in this repo's `CLAUDE.md`, `AGENTS.md`, and `CONSTITUTION.md`.
+
+The non-negotiable forensic anchor (verbatim 2026-04-29 operator mandate, reasserted multiple times across 2026-05):
+
+> *"We had been in position that all tests do execute with success and all Challenges as well, but in reality the most of the features does not work and can't be used! This MUST NOT be the case and execution of tests and Challenges MUST guarantee the quality, the completion and full usability by end users of the product!"*
+
+The bar for shipping is not "tests pass" but "users can use the feature."

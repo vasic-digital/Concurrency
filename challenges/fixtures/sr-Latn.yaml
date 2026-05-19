@@ -1,0 +1,21 @@
+# challenges/fixtures/sr-Latn.yaml
+#
+# Serbian-Latin locale fixture for the Concurrency describe challenge.
+# Paired with en.yaml — together they prove the runner's human-readable
+# summary is locale-aware rather than hardcoded English (CONST-046).
+#
+# Schema mirrors en.yaml: a flat key -> string map.
+
+challenge.banner: "=== Concurrency describe izazov (SR) ==="
+challenge.pool.label: "Bazen radnika"
+challenge.pool.summary: "Izvršeno %d zadataka kroz %d radnika (uspeh=%d, neuspeh=%d)"
+challenge.queue.label: "Prioritetni red"
+challenge.queue.summary: "Ispražnjeno %d stavki po prioritetu (glava=%s)"
+challenge.limiter.label: "Token-bucket limiter"
+challenge.limiter.summary: "Dozvoljeno %d zahteva u bucketu od %d (odbijeno=%d)"
+challenge.breaker.label: "Prekidač strujnog kola"
+challenge.breaker.summary: "Zabeleženo %d grešaka, stanje=%s, oporavljeno=%t"
+challenge.semaphore.label: "Težinski semafor"
+challenge.semaphore.summary: "Zauzeto %d mesta (trenutno=%d, dostupno=%d)"
+challenge.result.success: "Svi primitivi potvrđeni kao funkcionalni od kraja do kraja."
+challenge.result.failure: "Detektovana regresija u Concurrency primitivu; istražiti."

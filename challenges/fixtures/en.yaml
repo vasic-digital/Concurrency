@@ -1,0 +1,26 @@
+# challenges/fixtures/en.yaml
+#
+# English-locale fixture for the Concurrency describe challenge.
+# Used by challenges/runner/main.go to produce a bilingual end-to-end
+# proof that:
+#   - the worker pool, queue, limiter, breaker, and semaphore primitives
+#     all execute against real implementations (no mocks);
+#   - the human-readable run summary emitted by the runner is locale-
+#     aware (CONST-046 anti-hardcoded-content compliance).
+#
+# Schema is a flat key -> string map. Lookup miss returns the key
+# verbatim so a missing-key regression is loud, not silent.
+
+challenge.banner: "=== Concurrency describe challenge (EN) ==="
+challenge.pool.label: "Worker pool"
+challenge.pool.summary: "Executed %d tasks across %d workers (success=%d, failed=%d)"
+challenge.queue.label: "Priority queue"
+challenge.queue.summary: "Drained %d items in priority order (head=%s)"
+challenge.limiter.label: "Token-bucket limiter"
+challenge.limiter.summary: "Allowed %d requests within bucket of %d (rejected=%d)"
+challenge.breaker.label: "Circuit breaker"
+challenge.breaker.summary: "Recorded %d failures, state=%s, recovered=%t"
+challenge.semaphore.label: "Weighted semaphore"
+challenge.semaphore.summary: "Acquired %d slots (current=%d, available=%d)"
+challenge.result.success: "All primitives confirmed working end-to-end."
+challenge.result.failure: "Concurrency primitive regression detected; investigate."
