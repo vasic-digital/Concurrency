@@ -8,7 +8,7 @@
 //
 // Use this package instead of bare `map[K]V + sync.RWMutex` inside
 // any struct whose value is shared across goroutines. See
-// docs/development/concurrency-playbook.md in HelixAgent for the
+// docs/development/concurrency-playbook.md in the consuming project for the
 // migration rules.
 package safe
 
