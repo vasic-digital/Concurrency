@@ -124,7 +124,7 @@ log "Step 3: bilingual fixture load sanity"
 [[ -s "${SR_FIX}" ]] || fail "missing or empty fixture: ${SR_FIX}"
 grep -q 'challenge.banner' "${EN_FIX}" || fail "en fixture missing challenge.banner"
 grep -q 'challenge.banner' "${SR_FIX}" || fail "sr fixture missing challenge.banner"
-printf 'fixtures OK: %s + %s\n' "${EN_FIX}" "${SR_FIX}" | tee "${EVIDENCE_DIR}/04-fixtures.log"
+printf 'fixtures OK: %s + %s\n' "${EN_FIX}" "${SR_FIX}" | tee "${EVIDENCE_DIR}/04-fixtures.log"  # bluff-scan: ok (evidence-echo of state already asserted by grep -q || fail above; set -e active)
 
 # ---------------------------------------------------------------------------
 # Step 4 -- runtime end-to-end: real primitives, bilingual rendering
